@@ -8,10 +8,28 @@ const __dirname = dirname(__filename);
 const dbPath = join(__dirname, 'database.sqlite');
 const db = new sqlite3.Database(dbPath);
 
-db.serialize(() => {
+const run = (sql, params = []) => {
+  return new Promise((resolve, reject) => {
+    db.run(sql, params, function (err) {
+      if (err) reject(err);
+      else resolve({ lastID: this.lastID, changes: this.changes });
+    });
+  });
+};
+
+const get = (sql, params = []) => {
+  return new Promise((resolve, reject) => {
+    db.get(sql, params, (err, row) => {
+      if (err) reject(err);
+      else resolve(row);
+    });
+  });
+};
+
+const initDatabase = async () => {
   console.log('Initializing database...');
 
-  db.run(`CREATE TABLE IF NOT EXISTS users (
+  await run(`CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     username TEXT UNIQUE NOT NULL,
     password TEXT NOT NULL,
@@ -31,7 +49,7 @@ db.serialize(() => {
     createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
 
-  db.run(`CREATE TABLE IF NOT EXISTS artifacts (
+  await run(`CREATE TABLE IF NOT EXISTS artifacts (
     id TEXT PRIMARY KEY,
     userId TEXT NOT NULL,
     name TEXT NOT NULL,
@@ -49,7 +67,7 @@ db.serialize(() => {
     FOREIGN KEY (userId) REFERENCES users(id)
   )`);
 
-  db.run(`CREATE TABLE IF NOT EXISTS materials (
+  await run(`CREATE TABLE IF NOT EXISTS materials (
     id TEXT PRIMARY KEY,
     userId TEXT NOT NULL,
     name TEXT NOT NULL,
@@ -59,7 +77,7 @@ db.serialize(() => {
     FOREIGN KEY (userId) REFERENCES users(id)
   )`);
 
-  db.run(`CREATE TABLE IF NOT EXISTS museum_halls (
+  await run(`CREATE TABLE IF NOT EXISTS museum_halls (
     id TEXT PRIMARY KEY,
     userId TEXT NOT NULL,
     name TEXT NOT NULL,
@@ -69,7 +87,7 @@ db.serialize(() => {
     FOREIGN KEY (userId) REFERENCES users(id)
   )`);
 
-  db.run(`CREATE TABLE IF NOT EXISTS museum_slots (
+  await run(`CREATE TABLE IF NOT EXISTS museum_slots (
     id TEXT PRIMARY KEY,
     hallId TEXT NOT NULL,
     artifactId TEXT,
@@ -80,7 +98,7 @@ db.serialize(() => {
     FOREIGN KEY (artifactId) REFERENCES artifacts(id)
   )`);
 
-  db.run(`CREATE TABLE IF NOT EXISTS market_listings (
+  await run(`CREATE TABLE IF NOT EXISTS market_listings (
     id TEXT PRIMARY KEY,
     sellerId TEXT NOT NULL,
     sellerName TEXT NOT NULL,
@@ -94,7 +112,7 @@ db.serialize(() => {
     FOREIGN KEY (sellerId) REFERENCES users(id)
   )`);
 
-  db.run(`CREATE TABLE IF NOT EXISTS competitions (
+  await run(`CREATE TABLE IF NOT EXISTS competitions (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     season INTEGER DEFAULT 1,
@@ -103,7 +121,7 @@ db.serialize(() => {
     isActive INTEGER DEFAULT 1
   )`);
 
-  db.run(`CREATE TABLE IF NOT EXISTS competition_entries (
+  await run(`CREATE TABLE IF NOT EXISTS competition_entries (
     id TEXT PRIMARY KEY,
     competitionId TEXT NOT NULL,
     playerId TEXT NOT NULL,
@@ -115,7 +133,7 @@ db.serialize(() => {
     FOREIGN KEY (playerId) REFERENCES users(id)
   )`);
 
-  db.run(`CREATE TABLE IF NOT EXISTS guilds (
+  await run(`CREATE TABLE IF NOT EXISTS guilds (
     id TEXT PRIMARY KEY,
     name TEXT UNIQUE NOT NULL,
     leaderId TEXT NOT NULL,
@@ -128,7 +146,7 @@ db.serialize(() => {
     FOREIGN KEY (leaderId) REFERENCES users(id)
   )`);
 
-  db.run(`CREATE TABLE IF NOT EXISTS guild_members (
+  await run(`CREATE TABLE IF NOT EXISTS guild_members (
     id TEXT PRIMARY KEY,
     guildId TEXT NOT NULL,
     userId TEXT NOT NULL,
@@ -140,7 +158,7 @@ db.serialize(() => {
     FOREIGN KEY (userId) REFERENCES users(id)
   )`);
 
-  db.run(`CREATE TABLE IF NOT EXISTS guild_buildings (
+  await run(`CREATE TABLE IF NOT EXISTS guild_buildings (
     id TEXT PRIMARY KEY,
     guildId TEXT NOT NULL,
     name TEXT NOT NULL,
@@ -152,7 +170,7 @@ db.serialize(() => {
     FOREIGN KEY (guildId) REFERENCES guilds(id)
   )`);
 
-  db.run(`CREATE TABLE IF NOT EXISTS guild_materials (
+  await run(`CREATE TABLE IF NOT EXISTS guild_materials (
     id TEXT PRIMARY KEY,
     guildId TEXT NOT NULL,
     materialId TEXT NOT NULL,
@@ -161,7 +179,7 @@ db.serialize(() => {
     FOREIGN KEY (guildId) REFERENCES guilds(id)
   )`);
 
-  db.run(`CREATE TABLE IF NOT EXISTS ruin_wars (
+  await run(`CREATE TABLE IF NOT EXISTS ruin_wars (
     id TEXT PRIMARY KEY,
     ruinName TEXT NOT NULL,
     guildAId TEXT NOT NULL,
@@ -178,14 +196,14 @@ db.serialize(() => {
     FOREIGN KEY (guildBId) REFERENCES guilds(id)
   )`);
 
-  db.run(`CREATE TABLE IF NOT EXISTS announcements (
+  await run(`CREATE TABLE IF NOT EXISTS announcements (
     id TEXT PRIMARY KEY,
     type TEXT NOT NULL,
     message TEXT NOT NULL,
     createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
 
-  db.run(`CREATE TABLE IF NOT EXISTS ruin_sites (
+  await run(`CREATE TABLE IF NOT EXISTS ruin_sites (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     description TEXT,
@@ -198,43 +216,49 @@ db.serialize(() => {
 
   console.log('Database initialized!');
 
-  const checkRuins = db.prepare('SELECT COUNT(*) as count FROM ruin_sites');
-  checkRuins.get((err, row) => {
-    if (row.count === 0) {
-      const insertRuin = db.prepare(`INSERT INTO ruin_sites (id, name, description, difficulty, minLevel, staminaCost, era, depth) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
-      const ruins = [
-        ['ruin1', '遗忘神殿', '传说中供奉古神的神秘神殿', 3, 1, 15, 'ancient', 50],
-        ['ruin2', '龙巢废墟', '古龙栖息的巢穴', 5, 10, 25, 'classical', 120],
-        ['ruin3', '精灵森林遗迹', '古老精灵文明的失落之城', 4, 15, 20, 'medieval', 80],
-        ['ruin4', '冰封王座', '被冰雪封印的古代王国', 7, 25, 35, 'renaissance', 200],
-        ['ruin5', '深渊地牢', '连接地底世界的神秘入口', 9, 35, 50, 'ancient', 500]
-      ];
-      ruins.forEach(r => insertRuin.run(...r));
-      console.log('Ruin sites initialized!');
+  const ruinCount = await get('SELECT COUNT(*) as count FROM ruin_sites');
+  if (ruinCount.count === 0) {
+    const ruins = [
+      ['ruin1', '遗忘神殿', '传说中供奉古神的神秘神殿', 3, 1, 15, 'ancient', 50],
+      ['ruin2', '龙巢废墟', '古龙栖息的巢穴', 5, 10, 25, 'classical', 120],
+      ['ruin3', '精灵森林遗迹', '古老精灵文明的失落之城', 4, 15, 20, 'medieval', 80],
+      ['ruin4', '冰封王座', '被冰雪封印的古代王国', 7, 25, 35, 'renaissance', 200],
+      ['ruin5', '深渊地牢', '连接地底世界的神秘入口', 9, 35, 50, 'ancient', 500]
+    ];
+    for (const r of ruins) {
+      await run(`INSERT INTO ruin_sites (id, name, description, difficulty, minLevel, staminaCost, era, depth) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, r);
     }
-  });
+    console.log('Ruin sites initialized!');
+  }
 
-  const checkComps = db.prepare('SELECT COUNT(*) as count FROM competitions');
-  checkComps.get((err, row) => {
-    if (row.count === 0) {
-      const compId = 'comp_001';
-      const startDate = new Date(Date.now() - 86400000 * 2).toISOString();
-      const endDate = new Date(Date.now() + 86400000 * 5).toISOString();
-      db.run(`INSERT INTO competitions (id, name, season, startDate, endDate, isActive) VALUES (?, ?, ?, ?, ?, 1)`,
-        [compId, '第一届全服考古大赛', 1, startDate, endDate]);
-      console.log('Competition initialized!');
-    }
-  });
+  const compCount = await get('SELECT COUNT(*) as count FROM competitions');
+  if (compCount.count === 0) {
+    const startDate = new Date(Date.now() - 86400000 * 2).toISOString();
+    const endDate = new Date(Date.now() + 86400000 * 5).toISOString();
+    await run(`INSERT INTO competitions (id, name, season, startDate, endDate, isActive) VALUES (?, ?, ?, ?, ?, 1)`,
+      ['comp_001', '第一届全服考古大赛', 1, startDate, endDate]);
+    console.log('Competition initialized!');
+  }
 
-  const checkAnn = db.prepare('SELECT COUNT(*) as count FROM announcements');
-  checkAnn.get((err, row) => {
-    if (row.count === 0) {
-      const insertAnn = db.prepare(`INSERT INTO announcements (id, type, message) VALUES (?, ?, ?)`);
-      insertAnn.run('ann_001', 'system', '🎉 欢迎来到魔法遗迹考古世界！祝大家探险愉快！');
-      insertAnn.run('ann_002', 'competition', '🏆 第一届全服考古大赛火热进行中，快来参与！');
-      console.log('Announcements initialized!');
-    }
-  });
-});
+  const annCount = await get('SELECT COUNT(*) as count FROM announcements');
+  if (annCount.count === 0) {
+    await run(`INSERT INTO announcements (id, type, message) VALUES (?, ?, ?)`,
+      ['ann_001', 'system', '🎉 欢迎来到魔法遗迹考古世界！祝大家探险愉快！']);
+    await run(`INSERT INTO announcements (id, type, message) VALUES (?, ?, ?)`,
+      ['ann_002', 'competition', '🏆 第一届全服考古大赛火热进行中，快来参与！']);
+    console.log('Announcements initialized!');
+  }
 
-db.close();
+  console.log('✅ Database initialization complete!');
+};
+
+initDatabase()
+  .then(() => {
+    db.close();
+    process.exit(0);
+  })
+  .catch((err) => {
+    console.error('Database init error:', err);
+    db.close();
+    process.exit(1);
+  });

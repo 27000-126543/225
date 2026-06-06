@@ -1,6 +1,6 @@
 import express from 'express';
 import { authMiddleware } from '../middleware/auth.js';
-import { allQuery } from '../config/database.js';
+import { runQuery, getQuery, allQuery } from '../config/database.js';
 
 const router = express.Router();
 
@@ -63,8 +63,9 @@ router.get('/repair', authMiddleware, async (req, res) => {
 router.get('/report/:userId', authMiddleware, async (req, res) => {
   try {
     const { userId } = req.params;
-    const user = await allQuery('SELECT * FROM users WHERE id = ?', [userId]);
-    if (user.length === 0) return res.status(404).json({ error: '用户不存在' });
+    const user = await getQuery('SELECT * FROM users WHERE id = ?', [userId]);
+    if (!user) return res.status(404).json({ error: '用户不存在' });
+    delete user.password;
 
     const artifacts = await allQuery('SELECT * FROM artifacts WHERE userId = ?', [userId]);
     const rarityCount = { common: 0, uncommon: 0, rare: 0, epic: 0, legendary: 0 };
@@ -77,14 +78,21 @@ router.get('/report/:userId', authMiddleware, async (req, res) => {
 
     const excavationTrend = [];
     for (let i = 6; i >= 0; i--) {
+      const date = new Date(Date.now() - i * 86400000);
+      const dateStr = date.toISOString().split('T')[0];
+      const nextDate = new Date(date.getTime() + 86400000).toISOString().split('T')[0];
+      const dayArtifacts = await allQuery(
+        'SELECT id FROM artifacts WHERE userId = ? AND excavatedAt >= ? AND excavatedAt < ?',
+        [userId, dateStr, nextDate]
+      );
       excavationTrend.push({
-        date: new Date(Date.now() - i * 86400000).toISOString().split('T')[0],
-        count: Math.floor(Math.random() * 10) + 3
+        date: dateStr,
+        count: dayArtifacts.length
       });
     }
 
     res.json({
-      user: user[0],
+      user,
       rarityDistribution: Object.entries(rarityCount).map(([name, value]) => ({ name, value })),
       eraDistribution: Object.entries(eraCount).map(([name, value]) => ({ name, value })),
       excavationTrend,

@@ -16,7 +16,7 @@ const menuItems = [
 ]
 
 export const Sidebar = () => {
-  const { currentView, setCurrentView } = useGameStore()
+  const { activeView, setActiveView } = useGameStore()
 
   return (
     <aside className="w-64 glass-card border-r border-purple-500/30 p-4 flex flex-col gap-2">
@@ -25,11 +25,11 @@ export const Sidebar = () => {
       </div>
       {menuItems.map(item => {
         const Icon = item.icon
-        const isActive = currentView === item.id
+        const isActive = activeView === item.id
         return (
           <button
             key={item.id}
-            onClick={() => setCurrentView(item.id)}
+            onClick={() => setActiveView(item.id)}
             className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
               isActive
                 ? 'bg-gradient-to-r from-purple-600 to-purple-500 text-white shadow-lg shadow-purple-500/30'
